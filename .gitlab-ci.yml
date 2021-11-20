@@ -1,0 +1,87 @@
+before_script:
+  - mvn clean
+
+stages:
+  - install
+  - test
+  - analysis
+  - deploy
+
+variables:
+  MAVEN_OPTS: "-Dsonar.gitlab.commit_sha=$CI_BUILD_REF -Dsonar.gitlab.ref_name=$CI_BUILD_REF_NAME -Dsonar.gitlab.project_id=$CI_PROJECT_ID"
+# 编译安装
+mvn_install:
+  script:
+    - mvn install -Dmaven.test.skip=true
+  stage: install
+  only:
+    - develop
+    - master
+    - /^hotfix\/.+$/
+    - /^release\/.+$/
+# 单元测试
+unit_test:
+  script:
+    - echo "Skip Test!"
+  stage: test
+  only:
+    - develop
+      - master
+      - /^hotfix\/.+$/
+      - /^release\/.+$/
+# 集成测试
+integration_test:
+  script:
+    - echo "Skip Test!"
+  stage: test
+  only:
+    - develop
+    - master
+    - /^hotfix\/.+$/
+    - /^release\/.+$/
+
+# 分支合并bug检测
+sonarqube_preview:
+  script:
+    - mvn --batch-mode verify sonar:sonar -Dsonar.analysis.mode=preview -Dmaven.test.skip=true
+  stage: analysis
+  except:
+    - develop
+    - master
+    - /^hotfix\/.+$/
+    - /^release\/.+$/
+# bug检测
+sonarqube:
+  script:
+    - mvn --batch-mode verify sonar:sonar -Dmaven.test.skip=true
+  stage: analysis
+  only:
+    - develop
+    - master
+    - /^hotfix\/.+$/
+    - /^release\/.+$/
+
+# 发布快照版本
+mvn_snapshots:
+  script:
+    - pproject=$(mvn ${MAVEN_CLI_OPTS} exec:exec -q -N -Dexec.executable="echo" -Dexec.args='${project.artifactId}')
+    - version=$(mvn ${MAVEN_CLI_OPTS} exec:exec -q -N -Dexec.executable="echo" -Dexec.args='${project.version}' | awk -F '-' '{print $1}')
+    - mvn deploy -pl ${pproject} -am -Drevision=${version}-SNAPSHOT -DaltDeploymentRepository=ylzpay-snapshot::default::https://nexus.ylzpay.com/repository/maven-snapshots/ -Dmaven.test.skip=true
+  stage: deploy
+  only:
+    - develop
+    - /^release\/.+$/
+
+# 发布正式版本
+mvn_releases:
+  script:
+    - pproject=$(mvn ${MAVEN_CLI_OPTS} exec:exec -q -N -Dexec.executable="echo" -Dexec.args='${project.artifactId}')
+    - version=$(mvn ${MAVEN_CLI_OPTS} exec:exec -q -N -Dexec.executable="echo" -Dexec.args='${project.version}' | awk -F '-' '{print $1}')
+    - mvn deploy -pl ${pproject} -am -Drevision=${version}-RELEASE -DaltDeploymentRepository=ylzpay-release::default::https://nexus.ylzpay.com/repository/maven-releases/ -Dmaven.test.skip=true
+  stage: deploy
+  only:
+    - master
+    - /^hotfix\/.+$/
+
+after_script:
+  - mvn clean
